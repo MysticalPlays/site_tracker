@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Site Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        /* --- CSS VARIABLES FOR THEMING --- */
+        :root {
+            --bg-body: #f4f6f8;
+            --bg-card: #ffffff;
+            --bg-header: #ffffff;
+            --text-main: #333333;
+            --text-secondary: #666666;
+            --border-color: #e1e4e8;
+            --input-bg: #ffffff;
+            --input-border: #cccccc;
+            --primary: #007bff;
+            --primary-hover: #0056b3;
+            --accent-green: #28a745;
+            --shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        /* DARK MODE OVERRIDES */
+        [data-theme="dark"] {
+            --bg-body: #121212;
+            --bg-card: #1e1e1e;
+            --bg-header: #1e1e1e;
+            --text-main: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --border-color: #333333;
+            --input-bg: #2d2d2d;
+            --input-border: #444444;
+            --primary: #4dabf7;
+            --primary-hover: #339af0;
+            --shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* --- HEADER --- */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-header);
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .header h2 { margin: 0; font-size: 1.5rem; }
+        .header-controls { display: flex; align-items: center; gap: 15px; }
+        .role-badge { background: var(--primary); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; }
+        
+        .theme-toggle {
+            background: none; border: 1px solid var(--border-color); 
+            color: var(--text-main); cursor: pointer; padding: 5px 10px; 
+            border-radius: 20px; font-size: 1.2rem;
+        }
+
+        /* --- CONTROLS SECTION --- */
+        .controls, .admin-panel {
+            background: var(--bg-card);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
+        .admin-panel { border-left: 5px solid #ffc107; }
+        .controls { border-left: 5px solid var(--primary); }
+
+        /* INPUTS & BUTTONS */
+        .input-group { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+        
+        select, input {
+            padding: 12px;
+            border: 1px solid var(--input-border);
+            border-radius: 8px;
+            background: var(--input-bg);
+            color: var(--text-main);
+            font-size: 1rem;
+            flex: 1; /* Grow to fill space */
+        }
+        /* Specific widths for desktop */
+        input[type="number"] { max-width: 80px; text-align: center; }
+        #itemUnit { max-width: 100px; }
+
+        button {
+            padding: 12px 20px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        button:hover { background: var(--primary-hover); }
+
+        /* --- GRID LAYOUT --- */
+        #materialList {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--bg-card);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            position: relative;
+            border-top: 4px solid var(--accent-green);
+            transition: transform 0.2s;
+        }
+        .card:hover { transform: translateY(-2px); }
+        .card h3 { margin: 0 0 8px 0; color: var(--accent-green); }
+        .card .meta { font-size: 0.85em; color: var(--text-secondary); margin-top: 15px; padding-top: 10px; border-top: 1px solid var(--border-color); }
+
+        .delete-btn {
+            position: absolute; top: 15px; right: 15px;
+            background: #dc3545; color: white;
+            width: 30px; height: 30px; border-radius: 50%;
+            border: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px;
+        }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center; padding: 40px;
+            background: var(--bg-card); color: var(--text-secondary);
+            border-radius: 12px; border: 1px dashed var(--border-color);
+        }
+
+        /* --- MOBILE RESPONSIVE --- */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .header { flex-direction: column; align-items: flex-start; }
+            .header-controls { width: 100%; justify-content: space-between; margin-top: 10px; }
+            
+            .input-group { flex-direction: column; }
+            select, input, button { width: 100%; max-width: none !important; margin-right: 0; }
+            
+            #materialList { grid-template-columns: 1fr; } /* 1 column on mobile */
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>🏗️ Site Tracker</h2>
+        <div class="header-controls">
+            <div>
+                <b>{{ user.username }}</b>
+                <span class="role-badge">{{ user.role }}</span>
+            </div>
+            <div>
+                <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn">🌙</button>
+                <a href="/logout" style="color: var(--text-main); margin-left: 10px; text-decoration: none;">Logout ➔</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADMIN PANEL -->
+    {% if user.role == 'admin' %}
+    <div class="admin-panel">
+        <h3 style="margin-top: 0; color: #b78706;">👑 Create New Site</h3>
+        <div class="input-group">
+            <input type="text" id="newSiteName" placeholder="Site Name">
+            <input type="text" id="newSiteLocation" placeholder="Location">
+            <button onclick="createSite()" style="background: #ffc107; color: #000;">Create</button>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="controls">
+        <label style="color: var(--text-secondary); font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px; font-weight: bold;">Select Workspace</label>
+        <select id="siteSelector" onchange="changeSite()" style="margin-top: 8px; width: 100%;">
+            <option value="" disabled selected>Loading sites...</option>
+        </select>
+        
+        <div style="height: 1px; background: var(--border-color); margin: 20px 0;"></div>
+
+        <label style="color: var(--text-secondary); font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px; font-weight: bold;">Add Material</label>
+        <div class="input-group">
+            <input type="text" id="itemName" placeholder="Material Name (e.g. Cement)" style="flex: 2;">
+            <input type="number" id="itemQty" placeholder="Qty" value="1">
+            <select id="itemUnit">
+                <option value="">Unit</option>
+                <option value="KG">KG</option>
+                <option value="Tons">Tons</option>
+                <option value="Litre">Litre</option>
+                <option value="Bags">Bags</option>
+            </select>
+            <button onclick="submitMaterial()">+ Add</button>
+        </div>
+    </div>
+
+    <div id="materialList">
+        <div class="empty-state" id="emptyListMessage" style="display: none;">
+            🚧 No materials tracked at this site yet.
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        const socket = io();
+        const CURRENT_USER = "{{ user.username }}";
+        const CURRENT_ROLE = "{{ user.role }}";
+        let currentSiteId = null;
+
+        // --- THEME LOGIC ---
+        function toggleTheme() {
+            const body = document.body;
+            const current = body.getAttribute('data-theme');
+            const newTheme = current === 'dark' ? 'light' : 'dark';
+            
+            body.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        }
+
+        function updateThemeIcon(theme) {
+            const btn = document.getElementById('themeBtn');
+            btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+        }
+
+        // Load saved theme
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        document.body.setAttribute('data-theme', savedTheme);
+        updateThemeIcon(savedTheme);
+
+
+        // --- CORE LOGIC ---
+        function updateEmptyListMessage() {
+            const list = document.getElementById('materialList');
+            const msg = document.getElementById('emptyListMessage');
+            // If only the message div exists, show it
+            const hasCards = list.querySelectorAll('.card').length > 0;
+            msg.style.display = hasCards ? 'none' : 'block';
+        }
+
+        async function loadSites() {
+            const res = await fetch('/api/sites');
+            const sites = await res.json();
+            const selector = document.getElementById('siteSelector');
+            selector.innerHTML = ""; 
+
+            if(sites.length === 0) {
+                selector.innerHTML = "<option value='' disabled selected>No sites created yet</option>";
+                updateEmptyListMessage();
+                return;
+            }
+
+            sites.forEach(site => {
+                const option = document.createElement('option');
+                option.value = site._id;
+                option.text = `${site.name} — ${site.location || 'No Loc'}`;
+                selector.appendChild(option);
+            });
+
+            currentSiteId = sites[0]._id;
+            selector.value = currentSiteId;
+            joinCurrentSite();
+        }
+
+        function joinCurrentSite() {
+            if (currentSiteId) {
+                socket.emit('leave_site', { site_id: currentSiteId });
+            }
+            socket.emit('join_site', { site_id: currentSiteId });
+            loadMaterials(currentSiteId);
+        }
+
+        function changeSite() {
+            currentSiteId = document.getElementById('siteSelector').value;
+            document.getElementById('materialList').innerHTML = `
+                <div class="empty-state" id="emptyListMessage" style="display: none;">
+                    🚧 No materials tracked at this site yet.
+                </div>
+            `; 
+            joinCurrentSite();
+        }
+
+        async function createSite() {
+            const name = document.getElementById('newSiteName').value.trim();
+            const location = document.getElementById('newSiteLocation').value.trim();
+
+            if(!name || !location) return alert("Please enter both Site Name and Location.");
+
+            const res = await fetch('/api/create_site', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ site_name: name, site_location: location })
+            });
+            
+            if(res.ok) {
+                document.getElementById('newSiteName').value = "";
+                document.getElementById('newSiteLocation').value = "";
+                alert("Site Created!");
+            } else {
+                alert("Error creating site");
+            }
+        }
+
+        function deleteMaterial(id) {
+            if(confirm("Delete this item?")) {
+                socket.emit('delete_material', { id: id, site_id: currentSiteId });
+            }
+        }
+
+        function submitMaterial() {
+            const name = document.getElementById('itemName').value.trim();
+            const qty = parseInt(document.getElementById('itemQty').value, 10);
+            const unit = document.getElementById('itemUnit').value;
+
+            if(!name || isNaN(qty) || qty <= 0) return alert("Check name and quantity.");
+            if(!currentSiteId) return alert("Select a site first.");
+
+            socket.emit('add_material', {
+                site_id: currentSiteId,
+                name: name,
+                quantity: qty,
+                unit: unit
+            });
+            
+            document.getElementById('itemName').value = '';
+            document.getElementById('itemQty').value = '1';
+            document.getElementById('itemUnit').value = '';
+        }
+
+        async function loadMaterials(id) {
+            const response = await fetch(`/api/get_materials/${id}`);
+            const data = await response.json();
+            const list = document.getElementById('materialList');
+            
+            // Clear all CARDS, keep message div
+            const msgDiv = document.getElementById('emptyListMessage');
+            list.innerHTML = '';
+            list.appendChild(msgDiv);
+
+            data.forEach(item => addMaterialToDOM(item, false));
+            updateEmptyListMessage();
+        }
+
+        function addMaterialToDOM(item, addToTop) {
+            const list = document.getElementById('materialList');
+            const div = document.createElement('div');
+            div.className = 'card';
+            div.id = `card-${item._id}`;
+            
+            const unitDisplay = item.unit ? ` <small>${item.unit}</small>` : '';
+            
+            let deleteBtnHTML = '';
+            if (CURRENT_ROLE === 'admin' || CURRENT_USER === item.added_by) {
+                deleteBtnHTML = `<button class="delete-btn" onclick="deleteMaterial('${item._id}')">×</button>`;
+            }
+
+            div.innerHTML = `
+                ${deleteBtnHTML}
+                <h3>${item.name}</h3>
+                <div style="font-size: 1.2rem; font-weight: bold; color: var(--text-main);">
+                    ${item.quantity}${unitDisplay}
+                </div>
+                <div class="meta">
+                    👤 ${item.added_by} <span style="float:right">${item.timestamp}</span>
+                </div>
+            `;
+            
+            // If adding to top, insert after the hidden empty message
+            if (addToTop) {
+                const msgDiv = document.getElementById('emptyListMessage');
+                msgDiv.insertAdjacentElement('afterend', div);
+            } else {
+                list.appendChild(div);
+            }
+            updateEmptyListMessage();
+        }
+
+        // Socket Listeners
+        socket.on('update_list', (item) => addMaterialToDOM(item, true));
+        
+        socket.on('item_deleted', (data) => {
+            const el = document.getElementById(`card-${data.id}`);
+            if (el) el.remove();
+            updateEmptyListMessage();
+        });
+
+        socket.on('site_created', (newSite) => {
+            const selector = document.getElementById('siteSelector');
+            const option = document.createElement('option');
+            option.value = newSite._id;
+            option.text = `${newSite.name} — ${newSite.location}`;
+            selector.appendChild(option);
+            if (selector.options.length === 1) {
+                currentSiteId = newSite._id;
+                selector.value = currentSiteId;
+                joinCurrentSite();
+            }
+        });
+
+        // Initialize
+        loadSites();
+    </script>
+</body>
+</html>
