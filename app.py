@@ -1,3 +1,7 @@
+# !!! ADD THESE TWO LINES AT THE VERY TOP !!!
+import eventlet
+eventlet.monkey_patch()
+
 import os
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
@@ -13,19 +17,17 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# 2. Get Configuration from Environment
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+# 2. Get Configuration from Environment (WITH FALLBACK)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'fallback_secret_key_for_local_testing')
 MONGO_URI = os.getenv('MONGO_URI')
-ADMIN_CODE_SECRET = os.getenv('ADMIN_CODE')
-
-if not app.config['SECRET_KEY']:
-    print("WARNING: SECRET_KEY is missing from .env file!")
+ADMIN_CODE_SECRET = os.getenv('ADMIN_CODE', 'MASTER_BUILDER')
 
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Updated SocketIO config for better stability
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 # --- DATABASE CONNECTION ---
 if not MONGO_URI:
@@ -66,7 +68,6 @@ def register():
             return redirect(url_for('register'))
         
         role = 'user'
-        # Compare input against the secure environment variable
         if input_code and input_code == ADMIN_CODE_SECRET:
             role = 'admin'
 
@@ -186,7 +187,6 @@ def handle_delete(data):
     item = db.materials.find_one({"_id": ObjectId(material_id)})
     if not item: return
 
-    # Check: Is Admin OR Is Owner?
     is_admin = current_user.role == 'admin'
     is_owner = current_user.username == item.get('added_by')
 
