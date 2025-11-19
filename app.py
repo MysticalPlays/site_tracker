@@ -1,3 +1,5 @@
+import os
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from flask_socketio import SocketIO, emit, join_room
 from pymongo import MongoClient
@@ -6,8 +8,18 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import datetime
 
+# 1. Load variables from .env file
+load_dotenv()
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret_key_change_this'
+
+# 2. Get Configuration from Environment
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+MONGO_URI = os.getenv('MONGO_URI')
+ADMIN_CODE_SECRET = os.getenv('ADMIN_CODE')
+
+if not app.config['SECRET_KEY']:
+    print("WARNING: SECRET_KEY is missing from .env file!")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -16,10 +28,15 @@ login_manager.login_view = 'login'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- DATABASE CONNECTION ---
-# !!! PASTE YOUR REAL MONGODB CONNECTION STRING HERE !!!
-MONGO_URI = "mongodb+srv://ruchit:ruchit@cluster0.e0zayc3.mongodb.net/?retryWrites=true&w=majority"
-client = MongoClient(MONGO_URI)
-db = client['construction_db']
+if not MONGO_URI:
+    print("ERROR: MONGO_URI is missing. Check your .env file.")
+else:
+    try:
+        client = MongoClient(MONGO_URI)
+        db = client['construction_db']
+        print("Connected to MongoDB Atlas")
+    except Exception as e:
+        print(f"Failed to connect to MongoDB: {e}")
 
 # --- USER MODEL ---
 class User(UserMixin):
@@ -42,14 +59,15 @@ def register():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        admin_code = request.form.get('admin_code')
+        input_code = request.form.get('admin_code')
         
         if db.users.find_one({"username": username}):
             flash("Username already exists")
             return redirect(url_for('register'))
         
         role = 'user'
-        if admin_code == "MASTER_BUILDER":
+        # Compare input against the secure environment variable
+        if input_code and input_code == ADMIN_CODE_SECRET:
             role = 'admin'
 
         hashed_password = generate_password_hash(password)
@@ -157,7 +175,7 @@ def handle_add(data):
     new_item['_id'] = str(res.inserted_id)
     emit('update_list', new_item, room=site_id)
 
-# --- NEW DELETE FUNCTION ---
+# --- DELETE FUNCTION ---
 @socketio.on('delete_material')
 def handle_delete(data):
     material_id = data.get('id')
@@ -165,17 +183,15 @@ def handle_delete(data):
 
     if not material_id: return
 
-    # Find item to check permissions
     item = db.materials.find_one({"_id": ObjectId(material_id)})
     if not item: return
 
-    # Permission Check: Is Admin OR Is Owner?
+    # Check: Is Admin OR Is Owner?
     is_admin = current_user.role == 'admin'
     is_owner = current_user.username == item.get('added_by')
 
     if is_admin or is_owner:
         db.materials.delete_one({"_id": ObjectId(material_id)})
-        # Broadcast deletion to everyone in the room
         emit('item_deleted', {"id": material_id}, room=site_id)
 
 if __name__ == '__main__':

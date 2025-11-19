@@ -4,3 +4,5 @@ flask-login
 pymongo
 werkzeug
 eventlet
+gunicorn
+python-dotenv
